@@ -1,5 +1,6 @@
 package org.red.theia.http.endpoints
 
+import akka.http.scaladsl.model.StatusCodes
 import akka.http.scaladsl.server.Directives._
 import org.red.theia.theiaConfig
 import org.red.theia.Implicits._
@@ -26,7 +27,10 @@ trait Base
     accessLog(logger)(system.dispatcher, timeout, materializer) {
       handleErrors {
         pathPrefix(theiaConfig.getString("basePath")) {
-          npcDataEndpoints(universeController, npcKillDataController)
+          npcDataEndpoints(universeController, npcKillDataController) ~
+          get {
+            complete(StatusCodes.OK)
+          }
         }
       }
     }
