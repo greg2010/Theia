@@ -1,8 +1,24 @@
 package org.red.theia.http
 
+import org.red.theia.util.EveSystemWithDistance
+
 case class DataResponse[T](data: T)
 case class ErrorResponse(reason: String, code: Int = 1)
 
+case class AmbiguousResponse(value: String, options: Seq[String])
 
-case class SystemDeltaKillsDataResponse(systemId: Int, systemName: String, deltaData: Option[Int], killsData: Option[Int])
+case class EveSystemResponse(systemId: Int, SystemName: String, distance: Int)
 
+object EveSystemResponse {
+  def fromEveSystemWithDistance(eveSystemWithDistance: EveSystemWithDistance): EveSystemResponse = {
+    EveSystemResponse(eveSystemWithDistance.id, eveSystemWithDistance.name, eveSystemWithDistance.distance)
+  }
+}
+
+case class SystemDeltaKillsDataResponse(systemId: Int, systemName: String, distance: Int, npcDelta: Option[Int], npcKills: Option[Int])
+
+case class ConstellationDeltaKillsDataResponse(constellationId: Int,
+                                               constellationName: String,
+                                               closestSystem: EveSystemResponse,
+                                               npcMedianDelta: Option[Int],
+                                               npcMedianKills: Option[Int])

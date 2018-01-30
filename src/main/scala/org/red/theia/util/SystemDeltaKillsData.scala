@@ -1,3 +1,3 @@
 package org.red.theia.util
 
-case class SystemDeltaKillsData(system: EveSystem, deltaData: Option[Int], killsData: Option[Int])
+case class SystemDeltaKillsData(system: EveSystemWithDistance, npcDelta: Option[Int], npcKills: Option[Int])

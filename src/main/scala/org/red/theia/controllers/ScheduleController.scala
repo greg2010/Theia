@@ -3,6 +3,8 @@ package org.red.theia.controllers
 import java.sql.Timestamp
 import java.util.Date
 
+import scala.concurrent.duration._
+
 import com.typesafe.scalalogging.LazyLogging
 import org.quartz.Scheduler
 import org.quartz.impl.StdSchedulerFactory
@@ -25,16 +27,8 @@ class ScheduleController(npcKillDataController: NpcKillDataController)(implicit 
 
 
   def kickstartJob(jobType: String): Date = {
-    val j = newJob((new ScrapeDataJob).getClass)
-      .withIdentity(jobIdentity + jobType)
-      .build()
-    j.getJobDataMap.put("jobType", jobType)
-    val t = newTrigger()
-      .withIdentity(jobIdentity + jobType)
-      .forJob(j)
-      .startNow()
-      .build()
-    quartzScheduler.scheduleJob(j, t)
+    val now = new Timestamp(System.currentTimeMillis() + 1.second.toMillis)
+    scheduleJob(jobType, now)
   }
 
   def scheduleJob(jobType: String, at: Timestamp): Date = {

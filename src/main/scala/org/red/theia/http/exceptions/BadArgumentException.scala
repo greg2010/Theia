@@ -1,3 +1,3 @@
 package org.red.theia.http.exceptions
 
-case class BadArgumentException(argumentName: String) extends RuntimeException
+case class BadArgumentException(name: String) extends RuntimeException

@@ -22,7 +22,7 @@ package object theia {
     implicit val system: ActorSystem = ActorSystem("theia", config.getConfig("akka"))
     implicit val materializer: ActorMaterializer = ActorMaterializer()
     implicit val timeout: Timeout = Timeout(2 seconds)
-    implicit val printer: Printer = Printer.noSpaces.copy(dropNullValues = true)
+    implicit val printer: Printer = Printer.spaces2.copy(dropNullValues = true)
   }
 
   private val dbConfig: Config =  ConfigFactory.load(ConfigFactory.parseFile(new File("src/main/resources/reference.conf")))

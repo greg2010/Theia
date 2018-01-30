@@ -63,7 +63,11 @@ class NpcKillDataController(implicit ec: ExecutionContext) extends LazyLogging {
     }
   }
 
-  private def getDbDataForSystems(systems: List[EveSystem]): Future[Seq[Theia.NpcKillDataRow]] = {
+  private def getMedian(l: List[Int]): Int = {
+    l.sortWith(_ < _).drop(l.length/2).head
+  }
+
+  private def getDbDataForSystems(systems: List[EveSystemWithDistance]): Future[Seq[Theia.NpcKillDataRow]] = {
     val q = Theia.NpcKillData.filter(row => row.systemId inSet systems.map(_.id.toLong))
     val f = theiaDbObject.run(q.result)
     f.onComplete {
@@ -73,7 +77,7 @@ class NpcKillDataController(implicit ec: ExecutionContext) extends LazyLogging {
     f
   }
 
-  private def parseSystemDeltas(systems: List[EveSystem], dbData: Seq[Theia.NpcKillDataRow]): List[SystemDeltaKillsData] = {
+  private def parseSystemDeltas(systems: List[EveSystemWithDistance], dbData: Seq[Theia.NpcKillDataRow]): List[SystemDeltaKillsData] = {
     val twoHInThePast = new Timestamp(System.currentTimeMillis() - 2.hours.toMillis)
     val result = dbData.filter(_.fromTstamp.after(twoHInThePast)).groupBy(_.systemId)
       .map { systemData =>
@@ -91,7 +95,7 @@ class NpcKillDataController(implicit ec: ExecutionContext) extends LazyLogging {
     result ++ systems.diff(result.map(_.system)).map(s => SystemDeltaKillsData(s, Some(0), None)).sortBy(_.system.id)
   }
 
-  private def parseSystemKills(systems: List[EveSystem], dbData: Seq[Theia.NpcKillDataRow]): List[SystemDeltaKillsData] = {
+  private def parseSystemKills(systems: List[EveSystemWithDistance], dbData: Seq[Theia.NpcKillDataRow]): List[SystemDeltaKillsData] = {
     val twoHInThePast = new Timestamp(System.currentTimeMillis() - 2.hours.toMillis)
     val result = dbData.filter(_.fromTstamp.after(twoHInThePast)).groupBy(_.systemId)
       .map { systemData =>
@@ -104,19 +108,53 @@ class NpcKillDataController(implicit ec: ExecutionContext) extends LazyLogging {
     result ++ systems.diff(result.map(_.system)).map(s => SystemDeltaKillsData(s, None, Some(0))).sortBy(_.system.id)
   }
 
-  def getSystemDeltas(systems: List[EveSystem]): Future[List[SystemDeltaKillsData]] = {
-    this.getDbDataForSystems(systems).map(resp => parseSystemDeltas(systems, resp).sortBy(_.deltaData.map(- _)))
+  def getSystemDeltas(systems: List[EveSystemWithDistance]): Future[List[SystemDeltaKillsData]] = {
+    this.getDbDataForSystems(systems).map(resp => parseSystemDeltas(systems, resp).sortBy(_.npcDelta.map(- _)))
   }
 
-  def getSystemKills(systems: List[EveSystem]): Future[List[SystemDeltaKillsData]] = {
-    this.getDbDataForSystems(systems).map(resp => parseSystemKills(systems, resp).sortBy(_.killsData.map(- _)))
+  def getSystemKills(systems: List[EveSystemWithDistance]): Future[List[SystemDeltaKillsData]] = {
+    this.getDbDataForSystems(systems).map(resp => parseSystemKills(systems, resp).sortBy(_.npcKills.map(- _)))
   }
 
-  def getSystemDeltaAndKills(systems: List[EveSystem]): Future[List[SystemDeltaKillsData]] = {
+  def getSystemDeltaAndKills(systems: List[EveSystemWithDistance]): Future[List[SystemDeltaKillsData]] = {
     for {
       dbData <- this.getDbDataForSystems(systems)
       deltaData <- Future(parseSystemDeltas(systems, dbData))
       killsData <- Future(parseSystemKills(systems, dbData))
-    } yield deltaData.zip(killsData).map(x => SystemDeltaKillsData(x._1.system, x._1.deltaData, x._2.killsData)).sortBy(_.killsData.map(- _))
+    } yield deltaData.zip(killsData).map(x => SystemDeltaKillsData(x._1.system, x._1.npcDelta, x._2.npcKills)).sortBy(_.npcKills.map(- _))
+  }
+
+  def getConstellationMedianDeltas(constellations: List[EveConstellationWithDistance]): Future[List[ConstellationMedianKillsDeltaData]] = {
+    Future.sequence {
+      constellations.map { constellation =>
+        getSystemDeltas(constellation.systems).map { systemDeltas =>
+          val medianDelta = getMedian(systemDeltas.flatMap(_.npcDelta))
+          ConstellationMedianKillsDeltaData(constellation, Some(medianDelta), None)
+        }
+      }
+    }
+  }.map(_.sortBy(_.npcMedianDelta.map(- _)))
+
+  def getConstellationMedianKills(constellations: List[EveConstellationWithDistance]): Future[List[ConstellationMedianKillsDeltaData]] = {
+    Future.sequence {
+      constellations.map { constellation =>
+        getSystemKills(constellation.systems).map { systemKills =>
+          val medianKills = getMedian(systemKills.flatMap(_.npcKills))
+          ConstellationMedianKillsDeltaData(constellation, None, Some(medianKills))
+        }
+      }
+    }
+  }.map(_.sortBy(_.npcMedianKills.map(- _)))
+
+  def getConstellationMedianDeltaKills(constellations: List[EveConstellationWithDistance]): Future[List[ConstellationMedianKillsDeltaData]] = {
+    Future.sequence {
+      constellations.map { constellation =>
+        getSystemDeltaAndKills(constellation.systems).map { systemDeltaKills =>
+          val medianDelta = getMedian(systemDeltaKills.flatMap(_.npcDelta))
+          val medianKills = getMedian(systemDeltaKills.flatMap(_.npcKills))
+          ConstellationMedianKillsDeltaData(constellation, Some(medianDelta), Some(medianKills))
+        }
+      }
+    }.map(_.sortBy(_.npcMedianKills.map(- _)))
   }
 }

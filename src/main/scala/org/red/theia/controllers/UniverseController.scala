@@ -7,11 +7,12 @@ import java.io.ObjectOutputStream
 import com.typesafe.scalalogging.LazyLogging
 import org.red.db.models.Sde
 import org.red.theia.sdeDbObject
-import org.red.theia.util.{EveSystem, Position}
+import org.red.theia.util.{EveConstellationWithDistance, EveSystem, EveSystemWithDistance, Position}
 import slick.jdbc.PostgresProfile.api._
 import java.io.FileInputStream
 import java.io.ObjectInputStream
 
+import scalax.collection.GraphTraversal._
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.concurrent.duration.Duration
 import scala.util.{Failure, Success, Try}
@@ -90,9 +91,63 @@ class UniverseController(implicit ec: ExecutionContext) extends LazyLogging {
   private def getNode(outer: EveSystem): eveUniverseGraph.NodeT = eveUniverseGraph get outer
 
   def getSystemsByName(name: String): List[EveSystem] = {
-    val regex = "^.*" + name.toUpperCase() + ".*$"
-    systemData.filter(_.name.matches(regex))
+    val regex = "^.*" + name.toLowerCase() + ".*$"
+    systemData.filter(_.name.toLowerCase.matches(regex))
   }
 
-  def getWithinNJumps(system: EveSystem, n: Int): List[EveSystem] = getNode(system).withMaxDepth(n).map(_.toOuter).toList
+  def getWithinNJumps(system: EveSystem, n: Int): List[EveSystemWithDistance] =  {
+    import eveUniverseGraph.ExtendedNodeVisitor
+
+    var info = List.empty[(EveSystem, Int)]
+    getNode(system).innerNodeTraverser.withMaxDepth(n).withKind(BreadthFirst).foreach {
+      ExtendedNodeVisitor((node, count, depth, informer) => {
+        info :+= (node.value, depth)
+      })
+    }
+    info.map(s => EveSystemWithDistance(s._1.id, s._1.name, s._1.position, s._1.securityStatus, s._1.neighbours, s._2))
+  }
+
+
+  def getHeightMap(system: EveSystem): List[EveSystemWithDistance] = {
+    getWithinNJumps(system, systemData.length)
+  }
+
+  def getConstellationsBySystems(origin: EveSystem,
+                                 systems: List[EveSystemWithDistance]): Future[List[EveConstellationWithDistance]] = {
+    // Returns systemData augmented with distance with respect to `origin`
+    val systemDataWithDistance = getHeightMap(origin)
+    def getSystemsByConstellationId(dbData: Seq[(Option[Int], Int)]): Map[Int, List[EveSystemWithDistance]] = {
+      dbData.groupBy(_._1).map { data =>
+        // Const id is always set
+        val constId = data._1.get
+        // Assuming all systems in db are also presented in `systemDataWithDistance`
+        val systemIds = data._2.map(systemId => systemDataWithDistance.find(_.id == systemId._2).get)
+        (constId, systemIds.toList)
+      }
+    }
+
+    val q = Sde.Mapsolarsystems.filter(r => r.solarsystemid inSet systems.map(_.id))
+      .map(_.constellationid)
+      .join(Sde.Mapconstellations).on((constId, constTable) => constId === constTable.constellationid)
+      .map(res => (res._2.constellationid, res._2.constellationname)).distinctOn(r => r._1)
+
+    def q2(constellationIds: Seq[Int]) =
+      Sde.Mapsolarsystems.filter(_.constellationid inSet constellationIds)
+        .map(r => (r.constellationid, r.solarsystemid))
+
+    val f = for {
+      constList <- sdeDbObject.run(q.result)
+      systemsByConst <- sdeDbObject.run(q2(constList.map(_._1)).result).map(getSystemsByConstellationId)
+    } yield constList.map { c =>
+      val constellationSystems = systemsByConst(c._1)
+      EveConstellationWithDistance(c._1, c._2.get, systemsByConst(c._1))
+    }.toList
+
+    f.onComplete {
+      case Success(resp) => logger.info(s"Constellation list by systems success, constList=${resp.mkString(",")}")
+      case Failure(ex) => logger.error(s"Failed to get constellations by systems, systemList=${systems.mkString(",")}", ex)
+    }
+
+    f
+  }
 }
