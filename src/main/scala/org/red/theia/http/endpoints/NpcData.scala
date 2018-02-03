@@ -10,6 +10,7 @@ import org.red.theia.controllers.{NpcKillDataController, UniverseController}
 import org.red.theia.http.{ConstellationDeltaKillsDataResponse, DataResponse, EveSystemResponse, SystemDeltaKillsDataResponse}
 import org.red.theia.http.exceptions.{AmbiguousException, BadArgumentException, ResourceNotFoundException}
 import org.red.theia.util.{EveSystem, EveSystemWithDistance, SystemDeltaKillsData}
+import org.red.theia.Implicits._
 
 import scala.concurrent.{ExecutionContext, Future}
 
@@ -50,7 +51,8 @@ trait NpcData
                   data.constellation.name,
                   EveSystemResponse.fromEveSystemWithDistance(data.constellation.closestSystem),
                   data.npcMedianDelta,
-                  data.npcMedianKills)
+                  data.npcMedianKills,
+                  data.lastUpdated)
               })
             }
           }
@@ -68,7 +70,7 @@ trait NpcData
 
             data.map { d =>
               DataResponse(d.map { data =>
-                SystemDeltaKillsDataResponse(data.system.id, data.system.name, data.system.distance, data.npcDelta, data.npcKills)
+                SystemDeltaKillsDataResponse(data.system.id, data.system.name, data.system.distance, data.npcDelta, data.npcKills, data.lastUpdated)
               })
             }
           }

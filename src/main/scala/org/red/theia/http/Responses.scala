@@ -1,5 +1,7 @@
 package org.red.theia.http
 
+import java.sql.Timestamp
+
 import org.red.theia.util.EveSystemWithDistance
 
 case class DataResponse[T](data: T)
@@ -15,10 +17,11 @@ object EveSystemResponse {
   }
 }
 
-case class SystemDeltaKillsDataResponse(systemId: Int, systemName: String, distance: Int, npcDelta: Option[Int], npcKills: Option[Int])
+case class SystemDeltaKillsDataResponse(systemId: Int, systemName: String, distance: Int, npcDelta: Option[Int], npcKills: Option[Int], lastUpdated: Option[Timestamp])
 
 case class ConstellationDeltaKillsDataResponse(constellationId: Int,
                                                constellationName: String,
                                                closestSystem: EveSystemResponse,
                                                npcMedianDelta: Option[Int],
-                                               npcMedianKills: Option[Int])
+                                               npcMedianKills: Option[Int],
+                                               lastUpdated: Option[Timestamp])

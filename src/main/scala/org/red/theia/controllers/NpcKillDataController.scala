@@ -67,6 +67,17 @@ class NpcKillDataController(implicit ec: ExecutionContext) extends LazyLogging {
     l.sortWith(_ < _).drop(l.length/2).head
   }
 
+  private def max(ts1: Timestamp, ts2: Timestamp): Timestamp = new Timestamp(math.max(ts1.getTime, ts2.getTime))
+
+  private def max(ts1: Option[Timestamp], ts2: Option[Timestamp]): Option[Timestamp] = {
+    (ts1, ts2) match {
+      case (Some(t1), Some(t2)) => Some(max(t1, t2))
+      case (Some(t1), None) => Some(t1)
+      case (None, Some(t2)) => Some(t2)
+      case _ => None
+    }
+  }
+
   private def getDbDataForSystems(systems: List[EveSystemWithDistance]): Future[Seq[Theia.NpcKillDataRow]] = {
     val q = Theia.NpcKillData.filter(row => row.systemId inSet systems.map(_.id.toLong))
     val f = theiaDbObject.run(q.result)
@@ -83,16 +94,17 @@ class NpcKillDataController(implicit ec: ExecutionContext) extends LazyLogging {
       .map { systemData =>
         // Guaranteed to get since systemData only contains subset of systems
         val system = systems.find(_.id == systemData._1).get
-        val npcDelta = systemData._2.length match {
-          case 1 => systemData._2.head.npcKills // Only 1 record is present in the database
+        val (npcDelta, timestamp) = systemData._2.length match {
+          case 1 => (systemData._2.head.npcKills, systemData._2.head.fromTstamp) // Only 1 record is present in the database
           case _ => // 2 or more records are present in the database
             val d = systemData._2.sortBy(_.fromTstamp.getTime).take(2)
-            d.last.npcKills - d.head.npcKills
+            ((d.last.npcKills - d.head.npcKills) / (d.last.fromTstamp.getTime - d.head.fromTstamp.getTime).millis.toMinutes,
+            max(d.head.fromTstamp, d.last.fromTstamp))
         }
-        SystemDeltaKillsData(system, Some(npcDelta.toInt), None)
+        SystemDeltaKillsData(system, Some(npcDelta.toInt), None, Some(timestamp))
       }.toList
 
-    result ++ systems.diff(result.map(_.system)).map(s => SystemDeltaKillsData(s, Some(0), None)).sortBy(_.system.id)
+    result ++ systems.diff(result.map(_.system)).map(s => SystemDeltaKillsData(s, Some(0), None, None)).sortBy(_.system.id)
   }
 
   private def parseSystemKills(systems: List[EveSystemWithDistance], dbData: Seq[Theia.NpcKillDataRow]): List[SystemDeltaKillsData] = {
@@ -102,10 +114,11 @@ class NpcKillDataController(implicit ec: ExecutionContext) extends LazyLogging {
         // Guaranteed to get since systemData only contains subset of systems
         val system = systems.find(_.id == systemData._1).get
         val npcKills = systemData._2.head.npcKills
-        SystemDeltaKillsData(system, None, Some(npcKills.toInt))
+        val lastUpdated = systemData._2.head.fromTstamp
+        SystemDeltaKillsData(system, None, Some(npcKills.toInt), Some(lastUpdated))
       }.toList
 
-    result ++ systems.diff(result.map(_.system)).map(s => SystemDeltaKillsData(s, None, Some(0))).sortBy(_.system.id)
+    result ++ systems.diff(result.map(_.system)).map(s => SystemDeltaKillsData(s, None, Some(0), None)).sortBy(_.system.id)
   }
 
   def getSystemDeltas(systems: List[EveSystemWithDistance]): Future[List[SystemDeltaKillsData]] = {
@@ -121,7 +134,9 @@ class NpcKillDataController(implicit ec: ExecutionContext) extends LazyLogging {
       dbData <- this.getDbDataForSystems(systems)
       deltaData <- Future(parseSystemDeltas(systems, dbData))
       killsData <- Future(parseSystemKills(systems, dbData))
-    } yield deltaData.zip(killsData).map(x => SystemDeltaKillsData(x._1.system, x._1.npcDelta, x._2.npcKills)).sortBy(_.npcKills.map(- _))
+    } yield deltaData.zip(killsData)
+      .map(x => SystemDeltaKillsData(x._1.system, x._1.npcDelta, x._2.npcKills, max(x._1.lastUpdated, x._2.lastUpdated)))
+      .sortBy(_.npcKills.map(- _))
   }
 
   def getConstellationMedianDeltas(constellations: List[EveConstellationWithDistance]): Future[List[ConstellationMedianKillsDeltaData]] = {
@@ -129,7 +144,9 @@ class NpcKillDataController(implicit ec: ExecutionContext) extends LazyLogging {
       constellations.map { constellation =>
         getSystemDeltas(constellation.systems).map { systemDeltas =>
           val medianDelta = getMedian(systemDeltas.flatMap(_.npcDelta))
-          ConstellationMedianKillsDeltaData(constellation, Some(medianDelta), None)
+          val emptyTs: Option[Timestamp] = None
+          val lastUpdated = systemDeltas.map(_.lastUpdated).foldRight(emptyTs)((l, acc) => max(l, acc))
+          ConstellationMedianKillsDeltaData(constellation, Some(medianDelta), None, lastUpdated)
         }
       }
     }
@@ -140,7 +157,9 @@ class NpcKillDataController(implicit ec: ExecutionContext) extends LazyLogging {
       constellations.map { constellation =>
         getSystemKills(constellation.systems).map { systemKills =>
           val medianKills = getMedian(systemKills.flatMap(_.npcKills))
-          ConstellationMedianKillsDeltaData(constellation, None, Some(medianKills))
+          val emptyTs: Option[Timestamp] = None
+          val lastUpdated = systemKills.map(_.lastUpdated).foldRight(emptyTs)((l, acc) => max(l, acc))
+          ConstellationMedianKillsDeltaData(constellation, None, Some(medianKills), lastUpdated)
         }
       }
     }
@@ -152,7 +171,9 @@ class NpcKillDataController(implicit ec: ExecutionContext) extends LazyLogging {
         getSystemDeltaAndKills(constellation.systems).map { systemDeltaKills =>
           val medianDelta = getMedian(systemDeltaKills.flatMap(_.npcDelta))
           val medianKills = getMedian(systemDeltaKills.flatMap(_.npcKills))
-          ConstellationMedianKillsDeltaData(constellation, Some(medianDelta), Some(medianKills))
+          val emptyTs: Option[Timestamp] = None
+          val lastUpdated = systemDeltaKills.map(_.lastUpdated).foldRight(emptyTs)((l, acc) => max(l, acc))
+          ConstellationMedianKillsDeltaData(constellation, Some(medianDelta), Some(medianKills), lastUpdated)
         }
       }
     }.map(_.sortBy(_.npcMedianKills.map(- _)))
