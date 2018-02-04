@@ -11,6 +11,7 @@ import org.red.theia.http.{ConstellationDeltaKillsDataResponse, DataResponse, Ev
 import org.red.theia.http.exceptions.{AmbiguousException, BadArgumentException, ResourceNotFoundException}
 import org.red.theia.util.{EveSystem, EveSystemWithDistance, SystemDeltaKillsData}
 import org.red.theia.Implicits._
+import org.red.theia.theiaConfig
 
 import scala.concurrent.{ExecutionContext, Future}
 
@@ -21,7 +22,7 @@ trait NpcData
 
   def getSystems(name: String, distance: Int)
                 (universeController: UniverseController, npcKillDataController: NpcKillDataController): (EveSystem, List[EveSystemWithDistance]) = {
-    if (distance > 100) throw BadArgumentException("distance")
+    if (distance > theiaConfig.getInt("maxDistance")) throw BadArgumentException("distance")
     universeController.getSystemsByName(name) match {
       case List() => throw ResourceNotFoundException("systemName")
       case List(head) => (head, universeController.getWithinNJumps(head, distance))

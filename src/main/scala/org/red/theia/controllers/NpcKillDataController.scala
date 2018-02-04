@@ -15,7 +15,7 @@ import org.red.theia.{theiaDbObject, util}
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Failure, Success}
+import scala.util.{Failure, Success, Try}
 import scala.xml.XML
 
 class NpcKillDataController(implicit ec: ExecutionContext) extends LazyLogging {
@@ -98,8 +98,11 @@ class NpcKillDataController(implicit ec: ExecutionContext) extends LazyLogging {
           case 1 => (systemData._2.head.npcKills, systemData._2.head.fromTstamp) // Only 1 record is present in the database
           case _ => // 2 or more records are present in the database
             val d = systemData._2.sortBy(_.fromTstamp.getTime).take(2)
-            ((d.last.npcKills - d.head.npcKills) / (d.last.fromTstamp.getTime - d.head.fromTstamp.getTime).millis.toMinutes,
-            max(d.head.fromTstamp, d.last.fromTstamp))
+            val npcDelta = (d.last.fromTstamp.getTime - d.head.fromTstamp.getTime).millis.toMinutes match {
+              case 0 => (d.last.npcKills - d.head.npcKills) / 1
+              case x => (d.last.npcKills - d.head.npcKills) / x
+            }
+            (npcDelta, max(d.head.fromTstamp, d.last.fromTstamp))
         }
         SystemDeltaKillsData(system, Some(npcDelta.toInt), None, Some(timestamp))
       }.toList
