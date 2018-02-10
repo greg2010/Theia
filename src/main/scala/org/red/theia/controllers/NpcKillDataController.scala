@@ -79,7 +79,7 @@ class NpcKillDataController(implicit ec: ExecutionContext) extends LazyLogging {
   }
 
   private def getDbDataForSystems(systems: List[EveSystemWithDistance]): Future[Seq[Theia.NpcKillDataRow]] = {
-    val q = Theia.NpcKillData.filter(row => row.systemId inSet systems.map(_.id.toLong))
+    val q = Theia.NpcKillData.filter(row => row.systemId inSet systems.map(_.id.toLong)).take(20)
     val f = theiaDbObject.run(q.result)
     f.onComplete {
       case Success(resp) => logger.info(s"DB request for system list successful response length=${resp.length}")
