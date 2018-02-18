@@ -18,14 +18,14 @@
         <additionalField>application=theia</additionalField>
     </appender>
 
-    <logger name="slick" level="WARN"/>
+    <logger name="slick" level="DEBUG"/>
     <logger name="com.zaxxer.hikari" level="WARN"/>
     <logger name="io.netty" level="WARN"/>
     <logger name="com.ning" level="WARN"/>
     <logger name="org.quartz" level="WARN"/>
 
 
-    <root level="info">
+    <root level="DEBUG">
         <appender-ref ref="GRAYLOG" />
         <appender-ref ref="STDOUT"/>
     </root>
